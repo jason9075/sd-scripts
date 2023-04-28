@@ -22,7 +22,7 @@ def exists_repo(
 
 def upload(
     args: argparse.Namespace,
-    src: Union[str, Path, bytes, BinaryIO],
+    src: Union[str, Path, bytes],
     dest_suffix: str = "",
     force_sync_upload: bool = False,
 ):
@@ -30,7 +30,10 @@ def upload(
     repo_type = args.huggingface_repo_type
     token = args.huggingface_token
     path_in_repo = args.huggingface_path_in_repo + dest_suffix
-    private = args.huggingface_repo_visibility is None or args.huggingface_repo_visibility != "public"
+    private = (
+        args.huggingface_repo_visibility is None
+        or args.huggingface_repo_visibility != "public"
+    )
     api = HfApi(token=token)
     if not exists_repo(repo_id=repo_id, repo_type=repo_type, token=token):
         api.create_repo(repo_id=repo_id, repo_type=repo_type, private=private)

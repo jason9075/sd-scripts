@@ -1921,6 +1921,12 @@ def add_optimizer_arguments(parser: argparse.ArgumentParser):
         help="scheduler to use for learning rate / 学習率のスケジューラ: linear, cosine, cosine_with_restarts, polynomial, constant (default), constant_with_warmup, adafactor",
     )
     parser.add_argument(
+        "--rules",
+        type=str,
+        default="1",
+        help="piecewise constant rule"
+    )
+    parser.add_argument(
         "--lr_warmup_steps",
         type=int,
         default=0,
@@ -2651,6 +2657,8 @@ def get_scheduler_fix(args, optimizer: Optimizer, num_processes: int):
     if name == SchedulerType.CONSTANT:
         return wrap_check_needless_num_warmup_steps(schedule_func(optimizer))
 
+    if name == SchedulerType.CONSTANT_WITH_RULES:
+        return schedule_func(optimizer, rules=args.rules)
     # All other schedulers require `num_warmup_steps`
     if num_warmup_steps is None:
         raise ValueError(f"{name} requires `num_warmup_steps`, please provide that argument.")
