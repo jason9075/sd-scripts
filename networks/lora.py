@@ -11,7 +11,9 @@ import torch
 import re
 
 
-RE_UPDOWN = re.compile(r"(up|down)_blocks_(\d+)_(resnets|upsamplers|downsamplers|attentions)_(\d+)_")
+RE_UPDOWN = re.compile(
+    r"(up|down)_blocks_(\d+)_(resnets|upsamplers|downsamplers|attentions)_(\d+)_"
+)
 
 
 class LoRAModule(torch.nn.Module):
@@ -19,7 +21,14 @@ class LoRAModule(torch.nn.Module):
     replaces forward method of the original Linear, instead of replacing the original Linear module.
     """
 
-    def __init__(self, lora_name, org_module: torch.nn.Module, multiplier=1.0, lora_dim=4, alpha=1):
+    def __init__(
+        self,
+        lora_name,
+        org_module: torch.nn.Module,
+        multiplier=1.0,
+        lora_dim=4,
+        alpha=1,
+    ):
         """if alpha == 0 or None, alpha is rank (no scaling)."""
         super().__init__()
         self.lora_name = lora_name
@@ -42,8 +51,12 @@ class LoRAModule(torch.nn.Module):
             kernel_size = org_module.kernel_size
             stride = org_module.stride
             padding = org_module.padding
-            self.lora_down = torch.nn.Conv2d(in_dim, self.lora_dim, kernel_size, stride, padding, bias=False)
-            self.lora_up = torch.nn.Conv2d(self.lora_dim, out_dim, (1, 1), (1, 1), bias=False)
+            self.lora_down = torch.nn.Conv2d(
+                in_dim, self.lora_dim, kernel_size, stride, padding, bias=False
+            )
+            self.lora_up = torch.nn.Conv2d(
+                self.lora_dim, out_dim, (1, 1), (1, 1), bias=False
+            )
         else:
             self.lora_down = torch.nn.Linear(in_dim, self.lora_dim, bias=False)
             self.lora_up = torch.nn.Linear(self.lora_dim, out_dim, bias=False)
@@ -84,12 +97,16 @@ class LoRAModule(torch.nn.Module):
             weight = (
                 weight
                 + self.multiplier
-                * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2)).unsqueeze(2).unsqueeze(3)
+                * (up_weight.squeeze(3).squeeze(2) @ down_weight.squeeze(3).squeeze(2))
+                .unsqueeze(2)
+                .unsqueeze(3)
                 * self.scale
             )
         else:
             # conv2d 3x3
-            conved = torch.nn.functional.conv2d(down_weight.permute(1, 0, 2, 3), up_weight).permute(1, 0, 2, 3)
+            conved = torch.nn.functional.conv2d(
+                down_weight.permute(1, 0, 2, 3), up_weight
+            ).permute(1, 0, 2, 3)
             # print(conved.size(), weight.size(), module.stride, module.padding)
             weight = weight + self.multiplier * conved * self.scale
 
@@ -102,11 +119,21 @@ class LoRAModule(torch.nn.Module):
         self.region_mask = None
 
     def forward(self, x):
-        return self.org_forward(x) + self.lora_up(self.lora_down(x)) * self.multiplier * self.scale
+        return (
+            self.org_forward(x)
+            + self.lora_up(self.lora_down(x)) * self.multiplier * self.scale
+        )
 
 
 class LoRAInfModule(LoRAModule):
-    def __init__(self, lora_name, org_module: torch.nn.Module, multiplier=1.0, lora_dim=4, alpha=1):
+    def __init__(
+        self,
+        lora_name,
+        org_module: torch.nn.Module,
+        multiplier=1.0,
+        lora_dim=4,
+        alpha=1,
+    ):
         super().__init__(lora_name, org_module, multiplier, lora_dim, alpha)
 
         # check regional or not by lora_name
@@ -132,7 +159,10 @@ class LoRAInfModule(LoRAModule):
 
     def default_forward(self, x):
         # print("default_forward", self.lora_name, x.size())
-        return self.org_forward(x) + self.lora_up(self.lora_down(x)) * self.multiplier * self.scale
+        return (
+            self.org_forward(x)
+            + self.lora_up(self.lora_down(x)) * self.multiplier * self.scale
+        )
 
     def forward(self, x):
         if self.network is None or self.network.sub_prompt_index is None:
@@ -189,12 +219,16 @@ class LoRAInfModule(LoRAModule):
         if has_real_uncond:
             qc += self.network.batch_size  # real_uncond
 
-        query = torch.zeros((qc, x.size()[1], x.size()[2]), device=x.device, dtype=x.dtype)
+        query = torch.zeros(
+            (qc, x.size()[1], x.size()[2]), device=x.device, dtype=x.dtype
+        )
         query[: self.network.batch_size] = x[: self.network.batch_size]
 
         for i in range(self.network.batch_size):
             qi = self.network.batch_size + i * self.network.num_sub_prompts
-            query[qi : qi + self.network.num_sub_prompts] = x[self.network.batch_size + i]
+            query[qi : qi + self.network.num_sub_prompts] = x[
+                self.network.batch_size + i
+            ]
 
         if has_real_uncond:
             query[-self.network.batch_size :] = x[-self.network.batch_size :]
@@ -203,7 +237,9 @@ class LoRAInfModule(LoRAModule):
         return query
 
     def sub_prompt_forward(self, x):
-        if x.size()[0] == self.network.batch_size:  # if uncond in text_encoder, do not apply LoRA
+        if (
+            x.size()[0] == self.network.batch_size
+        ):  # if uncond in text_encoder, do not apply LoRA
             return self.org_forward(x)
 
         emb_idx = self.network.sub_prompt_index
@@ -231,12 +267,20 @@ class LoRAInfModule(LoRAModule):
             lx, masks = self.network.shared[self.lora_name]
 
         # call own LoRA
-        x1 = x[self.network.batch_size + self.network.sub_prompt_index :: self.network.num_sub_prompts]
+        x1 = x[
+            self.network.batch_size
+            + self.network.sub_prompt_index :: self.network.num_sub_prompts
+        ]
         lx1 = self.lora_up(self.lora_down(x1)) * self.multiplier * self.scale
 
         if self.network.is_last_network:
             lx = torch.zeros(
-                (self.network.num_sub_prompts * self.network.batch_size, *lx1.size()[1:]), device=lx1.device, dtype=lx1.dtype
+                (
+                    self.network.num_sub_prompts * self.network.batch_size,
+                    *lx1.size()[1:],
+                ),
+                device=lx1.device,
+                dtype=lx1.dtype,
             )
             self.network.shared[self.lora_name] = (lx, masks)
 
@@ -252,12 +296,20 @@ class LoRAInfModule(LoRAModule):
         lx, masks = self.network.shared.pop(self.lora_name)
 
         # if last network, combine separated x with mask weighted sum
-        has_real_uncond = x.size()[0] // self.network.batch_size == self.network.num_sub_prompts + 2
+        has_real_uncond = (
+            x.size()[0] // self.network.batch_size == self.network.num_sub_prompts + 2
+        )
 
-        out = torch.zeros((self.network.batch_size * (3 if has_real_uncond else 2), *x.size()[1:]), device=x.device, dtype=x.dtype)
+        out = torch.zeros(
+            (self.network.batch_size * (3 if has_real_uncond else 2), *x.size()[1:]),
+            device=x.device,
+            dtype=x.dtype,
+        )
         out[: self.network.batch_size] = x[: self.network.batch_size]  # uncond
         if has_real_uncond:
-            out[-self.network.batch_size :] = x[-self.network.batch_size :]  # real_uncond
+            out[-self.network.batch_size :] = x[
+                -self.network.batch_size :
+            ]  # real_uncond
 
         # print("to_out_forward", self.lora_name, self.network.sub_prompt_index, self.network.num_sub_prompts)
         # for i in range(len(masks)):
@@ -268,7 +320,11 @@ class LoRAInfModule(LoRAModule):
         mask_sum = torch.sum(mask, dim=0) + 1e-4
         for i in range(self.network.batch_size):
             # 1枚の画像ごとに処理する
-            lx1 = lx[i * self.network.num_sub_prompts : (i + 1) * self.network.num_sub_prompts]
+            lx1 = lx[
+                i
+                * self.network.num_sub_prompts : (i + 1)
+                * self.network.num_sub_prompts
+            ]
             lx1 = lx1 * mask
             lx1 = torch.sum(lx1, dim=0)
 
@@ -285,7 +341,9 @@ class LoRAInfModule(LoRAModule):
         return out
 
 
-def create_network(multiplier, network_dim, network_alpha, vae, text_encoder, unet, **kwargs):
+def create_network(
+    multiplier, network_dim, network_alpha, vae, text_encoder, unet, **kwargs
+):
     if network_dim is None:
         network_dim = 4  # default
     if network_alpha is None:
@@ -308,35 +366,70 @@ def create_network(multiplier, network_dim, network_alpha, vae, text_encoder, un
     up_lr_weight = kwargs.get("up_lr_weight", None)
 
     # 以上のいずれかに指定があればblockごとのdim(rank)を有効にする
-    if block_dims is not None or down_lr_weight is not None or mid_lr_weight is not None or up_lr_weight is not None:
+    if (
+        block_dims is not None
+        or down_lr_weight is not None
+        or mid_lr_weight is not None
+        or up_lr_weight is not None
+    ):
         block_alphas = kwargs.get("block_alphas", None)
         conv_block_dims = kwargs.get("conv_block_dims", None)
         conv_block_alphas = kwargs.get("conv_block_alphas", None)
 
-        block_dims, block_alphas, conv_block_dims, conv_block_alphas = get_block_dims_and_alphas(
-            block_dims, block_alphas, network_dim, network_alpha, conv_block_dims, conv_block_alphas, conv_dim, conv_alpha
+        (
+            block_dims,
+            block_alphas,
+            conv_block_dims,
+            conv_block_alphas,
+        ) = get_block_dims_and_alphas(
+            block_dims,
+            block_alphas,
+            network_dim,
+            network_alpha,
+            conv_block_dims,
+            conv_block_alphas,
+            conv_dim,
+            conv_alpha,
         )
 
         # extract learning rate weight for each block
         if down_lr_weight is not None:
             # if some parameters are not set, use zero
             if "," in down_lr_weight:
-                down_lr_weight = [(float(s) if s else 0.0) for s in down_lr_weight.split(",")]
+                down_lr_weight = [
+                    (float(s) if s else 0.0) for s in down_lr_weight.split(",")
+                ]
 
         if mid_lr_weight is not None:
             mid_lr_weight = float(mid_lr_weight)
 
         if up_lr_weight is not None:
             if "," in up_lr_weight:
-                up_lr_weight = [(float(s) if s else 0.0) for s in up_lr_weight.split(",")]
+                up_lr_weight = [
+                    (float(s) if s else 0.0) for s in up_lr_weight.split(",")
+                ]
 
         down_lr_weight, mid_lr_weight, up_lr_weight = get_block_lr_weight(
-            down_lr_weight, mid_lr_weight, up_lr_weight, float(kwargs.get("block_lr_zero_threshold", 0.0))
+            down_lr_weight,
+            mid_lr_weight,
+            up_lr_weight,
+            float(kwargs.get("block_lr_zero_threshold", 0.0)),
         )
 
         # remove block dim/alpha without learning rate
-        block_dims, block_alphas, conv_block_dims, conv_block_alphas = remove_block_dims_and_alphas(
-            block_dims, block_alphas, conv_block_dims, conv_block_alphas, down_lr_weight, mid_lr_weight, up_lr_weight
+        (
+            block_dims,
+            block_alphas,
+            conv_block_dims,
+            conv_block_alphas,
+        ) = remove_block_dims_and_alphas(
+            block_dims,
+            block_alphas,
+            conv_block_dims,
+            conv_block_alphas,
+            down_lr_weight,
+            mid_lr_weight,
+            up_lr_weight,
         )
 
     else:
@@ -360,7 +453,11 @@ def create_network(multiplier, network_dim, network_alpha, vae, text_encoder, un
         varbose=True,
     )
 
-    if up_lr_weight is not None or mid_lr_weight is not None or down_lr_weight is not None:
+    if (
+        up_lr_weight is not None
+        or mid_lr_weight is not None
+        or down_lr_weight is not None
+    ):
         network.set_block_lr_weight(up_lr_weight, mid_lr_weight, down_lr_weight)
 
     return network
@@ -371,7 +468,14 @@ def create_network(multiplier, network_dim, network_alpha, vae, text_encoder, un
 # block_dims, block_alphas は両方ともNoneまたは両方とも値が入っている
 # conv_dim, conv_alpha は両方ともNoneまたは両方とも値が入っている
 def get_block_dims_and_alphas(
-    block_dims, block_alphas, network_dim, network_alpha, conv_block_dims, conv_block_alphas, conv_dim, conv_alpha
+    block_dims,
+    block_alphas,
+    network_dim,
+    network_alpha,
+    conv_block_dims,
+    conv_block_alphas,
+    conv_dim,
+    conv_alpha,
 ):
     num_total_blocks = LoRANetwork.NUM_OF_BLOCKS * 2 + 1
 
@@ -388,7 +492,9 @@ def get_block_dims_and_alphas(
             len(block_dims) == num_total_blocks
         ), f"block_dims must have {num_total_blocks} elements / block_dimsは{num_total_blocks}個指定してください"
     else:
-        print(f"block_dims is not specified. all dims are set to {network_dim} / block_dimsが指定されていません。すべてのdimは{network_dim}になります")
+        print(
+            f"block_dims is not specified. all dims are set to {network_dim} / block_dimsが指定されていません。すべてのdimは{network_dim}になります"
+        )
         block_dims = [network_dim] * num_total_blocks
 
     if block_alphas is not None:
@@ -453,9 +559,15 @@ def get_block_lr_weight(
         base_lr = float(tokens[1]) if len(tokens) > 1 else 0.0
 
         if name == "cosine":
-            return [math.sin(math.pi * (i / (max_len - 1)) / 2) + base_lr for i in reversed(range(max_len))]
+            return [
+                math.sin(math.pi * (i / (max_len - 1)) / 2) + base_lr
+                for i in reversed(range(max_len))
+            ]
         elif name == "sine":
-            return [math.sin(math.pi * (i / (max_len - 1)) / 2) + base_lr for i in range(max_len)]
+            return [
+                math.sin(math.pi * (i / (max_len - 1)) / 2) + base_lr
+                for i in range(max_len)
+            ]
         elif name == "linear":
             return [i / (max_len - 1) + base_lr for i in range(max_len)]
         elif name == "reverse_linear":
@@ -474,14 +586,24 @@ def get_block_lr_weight(
     if type(up_lr_weight) == str:
         up_lr_weight = get_list(up_lr_weight)
 
-    if (up_lr_weight != None and len(up_lr_weight) > max_len) or (down_lr_weight != None and len(down_lr_weight) > max_len):
-        print("down_weight or up_weight is too long. Parameters after %d-th are ignored." % max_len)
+    if (up_lr_weight != None and len(up_lr_weight) > max_len) or (
+        down_lr_weight != None and len(down_lr_weight) > max_len
+    ):
+        print(
+            "down_weight or up_weight is too long. Parameters after %d-th are ignored."
+            % max_len
+        )
         print("down_weightもしくはup_weightが長すぎます。%d個目以降のパラメータは無視されます。" % max_len)
         up_lr_weight = up_lr_weight[:max_len]
         down_lr_weight = down_lr_weight[:max_len]
 
-    if (up_lr_weight != None and len(up_lr_weight) < max_len) or (down_lr_weight != None and len(down_lr_weight) < max_len):
-        print("down_weight or up_weight is too short. Parameters after %d-th are filled with 1." % max_len)
+    if (up_lr_weight != None and len(up_lr_weight) < max_len) or (
+        down_lr_weight != None and len(down_lr_weight) < max_len
+    ):
+        print(
+            "down_weight or up_weight is too short. Parameters after %d-th are filled with 1."
+            % max_len
+        )
         print("down_weightもしくはup_weightが短すぎます。%d個目までの不足したパラメータは1で補われます。" % max_len)
 
         if down_lr_weight != None and len(down_lr_weight) < max_len:
@@ -514,7 +636,13 @@ def get_block_lr_weight(
 
 # lr_weightが0のblockをblock_dimsから除外する、外部から呼び出す可能性を考慮しておく
 def remove_block_dims_and_alphas(
-    block_dims, block_alphas, conv_block_dims, conv_block_alphas, down_lr_weight, mid_lr_weight, up_lr_weight
+    block_dims,
+    block_alphas,
+    conv_block_dims,
+    conv_block_alphas,
+    down_lr_weight,
+    mid_lr_weight,
+    up_lr_weight,
 ):
     # set 0 to block dim without learning rate to remove the block
     if down_lr_weight != None:
@@ -566,7 +694,16 @@ def get_block_index(lora_name: str) -> int:
 
 
 # Create network from weights for inference, weights are not loaded here (because can be merged)
-def create_network_from_weights(multiplier, file, vae, text_encoder, unet, weights_sd=None, for_inference=False, **kwargs):
+def create_network_from_weights(
+    multiplier,
+    file,
+    vae,
+    text_encoder,
+    unet,
+    weights_sd=None,
+    for_inference=False,
+    **kwargs,
+):
     if weights_sd is None:
         if os.path.splitext(file)[1] == ".safetensors":
             from safetensors.torch import load_file, safe_open
@@ -598,7 +735,12 @@ def create_network_from_weights(multiplier, file, vae, text_encoder, unet, weigh
     module_class = LoRAInfModule if for_inference else LoRAModule
 
     network = LoRANetwork(
-        text_encoder, unet, multiplier=multiplier, modules_dim=modules_dim, modules_alpha=modules_alpha, module_class=module_class
+        text_encoder,
+        unet,
+        multiplier=multiplier,
+        modules_dim=modules_dim,
+        modules_alpha=modules_alpha,
+        module_class=module_class,
     )
     return network, weights_sd
 
@@ -608,7 +750,11 @@ class LoRANetwork(torch.nn.Module):
 
     # is it possible to apply conv_in and conv_out? -> yes, newer LoCon supports it (^^;)
     UNET_TARGET_REPLACE_MODULE = ["Transformer2DModel", "Attention"]
-    UNET_TARGET_REPLACE_MODULE_CONV2D_3X3 = ["ResnetBlock2D", "Downsample2D", "Upsample2D"]
+    UNET_TARGET_REPLACE_MODULE_CONV2D_3X3 = [
+        "ResnetBlock2D",
+        "Downsample2D",
+        "Upsample2D",
+    ]
     TEXT_ENCODER_TARGET_REPLACE_MODULE = ["CLIPAttention", "CLIPMLP"]
     LORA_PREFIX_UNET = "lora_unet"
     LORA_PREFIX_TEXT_ENCODER = "lora_te"
@@ -659,11 +805,19 @@ class LoRANetwork(torch.nn.Module):
         else:
             print(f"create LoRA network. base dim (rank): {lora_dim}, alpha: {alpha}")
             if self.conv_lora_dim is not None:
-                print(f"apply LoRA to Conv2d with kernel size (3,3). dim (rank): {self.conv_lora_dim}, alpha: {self.conv_alpha}")
+                print(
+                    f"apply LoRA to Conv2d with kernel size (3,3). dim (rank): {self.conv_lora_dim}, alpha: {self.conv_alpha}"
+                )
 
         # create module instances
-        def create_modules(is_unet, root_module: torch.nn.Module, target_replace_modules) -> List[LoRAModule]:
-            prefix = LoRANetwork.LORA_PREFIX_UNET if is_unet else LoRANetwork.LORA_PREFIX_TEXT_ENCODER
+        def create_modules(
+            is_unet, root_module: torch.nn.Module, target_replace_modules
+        ) -> List[LoRAModule]:
+            prefix = (
+                LoRANetwork.LORA_PREFIX_UNET
+                if is_unet
+                else LoRANetwork.LORA_PREFIX_TEXT_ENCODER
+            )
             loras = []
             skipped = []
             for name, module in root_module.named_modules():
@@ -700,20 +854,35 @@ class LoRANetwork(torch.nn.Module):
                                     alpha = self.conv_alpha
 
                             if dim is None or dim == 0:
-                                if is_linear or is_conv2d_1x1 or (self.conv_lora_dim is not None or conv_block_dims is not None):
+                                if (
+                                    is_linear
+                                    or is_conv2d_1x1
+                                    or (
+                                        self.conv_lora_dim is not None
+                                        or conv_block_dims is not None
+                                    )
+                                ):
                                     skipped.append(lora_name)
                                 continue
 
-                            lora = module_class(lora_name, child_module, self.multiplier, dim, alpha)
+                            lora = module_class(
+                                lora_name, child_module, self.multiplier, dim, alpha
+                            )
                             loras.append(lora)
             return loras, skipped
 
-        self.text_encoder_loras, skipped_te = create_modules(False, text_encoder, LoRANetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE)
+        self.text_encoder_loras, skipped_te = create_modules(
+            False, text_encoder, LoRANetwork.TEXT_ENCODER_TARGET_REPLACE_MODULE
+        )
         print(f"create LoRA for Text Encoder: {len(self.text_encoder_loras)} modules.")
 
         # extend U-Net target modules if conv2d 3x3 is enabled, or load from weights
         target_modules = LoRANetwork.UNET_TARGET_REPLACE_MODULE
-        if modules_dim is not None or self.conv_lora_dim is not None or conv_block_dims is not None:
+        if (
+            modules_dim is not None
+            or self.conv_lora_dim is not None
+            or conv_block_dims is not None
+        ):
             target_modules += LoRANetwork.UNET_TARGET_REPLACE_MODULE_CONV2D_3X3
 
         self.unet_loras, skipped_un = create_modules(True, unet, target_modules)
@@ -735,7 +904,9 @@ class LoRANetwork(torch.nn.Module):
         # assertion
         names = set()
         for lora in self.text_encoder_loras + self.unet_loras:
-            assert lora.lora_name not in names, f"duplicated lora name: {lora.lora_name}"
+            assert (
+                lora.lora_name not in names
+            ), f"duplicated lora name: {lora.lora_name}"
             names.add(lora.lora_name)
 
     def set_multiplier(self, multiplier):
@@ -860,7 +1031,9 @@ class LoRANetwork(torch.nn.Module):
                     if unet_lr is not None:
                         param_data["lr"] = unet_lr * self.get_lr_weight(block_loras[0])
                     elif default_lr is not None:
-                        param_data["lr"] = default_lr * self.get_lr_weight(block_loras[0])
+                        param_data["lr"] = default_lr * self.get_lr_weight(
+                            block_loras[0]
+                        )
                     if ("lr" in param_data) and (param_data["lr"] == 0):
                         continue
                     all_params.append(param_data)
@@ -905,9 +1078,6 @@ class LoRANetwork(torch.nn.Module):
             # Precalculate model hashes to save time on indexing
             if metadata is None:
                 metadata = {}
-            model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(state_dict, metadata)
-            metadata["sshs_model_hash"] = model_hash
-            metadata["sshs_legacy_hash"] = legacy_hash
 
             save_file(state_dict, file, metadata)
         else:
@@ -925,7 +1095,9 @@ class LoRANetwork(torch.nn.Module):
         for lora in self.text_encoder_loras + self.unet_loras:
             lora.set_network(self)
 
-    def set_current_generation(self, batch_size, num_sub_prompts, width, height, shared):
+    def set_current_generation(
+        self, batch_size, num_sub_prompts, width, height, shared
+    ):
         self.batch_size = batch_size
         self.num_sub_prompts = num_sub_prompts
         self.current_size = (height, width)
@@ -935,13 +1107,19 @@ class LoRANetwork(torch.nn.Module):
         mask = self.mask
         mask_dic = {}
         mask = mask.unsqueeze(0).unsqueeze(1)  # b(1),c(1),h,w
-        ref_weight = self.text_encoder_loras[0].lora_down.weight if self.text_encoder_loras else self.unet_loras[0].lora_down.weight
+        ref_weight = (
+            self.text_encoder_loras[0].lora_down.weight
+            if self.text_encoder_loras
+            else self.unet_loras[0].lora_down.weight
+        )
         dtype = ref_weight.dtype
         device = ref_weight.device
 
         def resize_add(mh, mw):
             # print(mh, mw, mh * mw)
-            m = torch.nn.functional.interpolate(mask, (mh, mw), mode="bilinear")  # doesn't work in bf16
+            m = torch.nn.functional.interpolate(
+                mask, (mh, mw), mode="bilinear"
+            )  # doesn't work in bf16
             m = m.to(device, dtype=dtype)
             mask_dic[mh * mw] = m
 
